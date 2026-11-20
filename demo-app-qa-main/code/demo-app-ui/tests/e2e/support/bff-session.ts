@@ -28,7 +28,6 @@ export interface DashboardStats {
 export class BffSession {
   private constructor(
     private readonly api: APIRequestContext,
-    private readonly csrfToken: string,
     readonly user: AuthenticatedUser,
     readonly credentials: Credentials
   ) {}
@@ -39,11 +38,7 @@ export class BffSession {
     await expectSuccess(loginResponse, `login as ${credentials.email}`);
     const user = (await loginResponse.json()) as AuthenticatedUser;
 
-    const csrfResponse = await api.get('/api/auth/csrf');
-    await expectSuccess(csrfResponse, 'fetch CSRF token');
-    const { token } = (await csrfResponse.json()) as { token: string };
-
-    return new BffSession(api, token, user, credentials);
+    return new BffSession(api, user, credentials);
   }
 
   /** Registers a brand-new claimant so each test owns its data and parallel runs never collide. */
@@ -63,8 +58,8 @@ export class BffSession {
 
   // ---- Claimant operations -------------------------------------------------
 
-  submitClaim(input: ClaimInput): Promise<APIResponse> {
-    return this.api.post('/api/claims', { data: input, headers: this.csrfHeaders() });
+  async submitClaim(input: ClaimInput): Promise<APIResponse> {
+    return this.api.post('/api/claims', { data: input, headers: await this.csrfHeaders() });
   }
 
   async submitClaimOk(input: ClaimInput): Promise<ClaimView> {
@@ -85,10 +80,10 @@ export class BffSession {
 
   // ---- Admin operations ----------------------------------------------------
 
-  updateClaimStatus(claimId: string, newStatus: ClaimStatus): Promise<APIResponse> {
+  async updateClaimStatus(claimId: string, newStatus: ClaimStatus): Promise<APIResponse> {
     return this.api.patch(`/api/admin/claims/${claimId}/status`, {
       data: { newStatus },
-      headers: this.csrfHeaders(),
+      headers: await this.csrfHeaders(),
     });
   }
 
@@ -119,8 +114,16 @@ export class BffSession {
     return this.api.dispose();
   }
 
-  private csrfHeaders() {
-    return { 'X-XSRF-TOKEN': this.csrfToken };
+  /**
+   * The BFF's CSRF token does not survive a state-changing request (a second POST/PATCH
+   * with the same token gets 403), so fetch the current one before every mutation -
+   * the real UI likewise re-reads the XSRF-TOKEN cookie on each request.
+   */
+  private async csrfHeaders(): Promise<Record<string, string>> {
+    const response = await this.api.get('/api/auth/csrf');
+    await expectSuccess(response, 'fetch CSRF token');
+    const { token } = (await response.json()) as { token: string };
+    return { 'X-XSRF-TOKEN': token };
   }
 }
 

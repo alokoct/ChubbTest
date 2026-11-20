@@ -1,0 +1,15 @@
+# Test-environment override for running the E2E suite against the local stack.
+#
+# BUG-16: the BFF signs in to Keycloak's admin API with KEYCLOAK_ADMIN_PASSWORD,
+# which defaults to "admin" (bff-service application.yml), but Keycloak is
+# bootstrapped with "Admin123!" (docker-compose.infra.yml) and
+# docker-compose.apps.yml never passes the variable. Result: every sign-up
+# returns HTTP 500. This override supplies the correct value without changing
+# application code.
+#
+# Usage (from the folder the stack was started in):
+#   docker compose -f docker-compose.apps.yml -f <path>/docker-compose.e2e.yml up -d --no-deps bff-service
+services:
+  bff-service:
+    environment:
+      KEYCLOAK_ADMIN_PASSWORD: "Admin123!"
